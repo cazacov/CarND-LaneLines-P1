@@ -130,7 +130,7 @@ def process_image(image):
     xsize = image.shape[1]
     ysize = image.shape[0]
 
-    result = np.copy(image)
+    original_image = np.copy(image)
 
     # Convert to grayscale
     gray = grayscale(image)
@@ -167,11 +167,14 @@ def process_image(image):
     # Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
     filtered_lines = filter_low_slope(lines)
 
-    filtered_lines = filter_lines(filtered_lines)
+    filtered_lines = find_left_right(filtered_lines)
 
     lane = extend_lines_to_border(filtered_lines, xsize, ysize)
 
-    draw_lines(result, lane)
+    lane_image = np.zeros((ysize, xsize, 3), dtype=np.uint8)
+    draw_lines(lane_image, lane, thickness=5)
+
+    result = weighted_img(original_image, lane_image)
 
     return result
 
@@ -192,7 +195,7 @@ def filter_low_slope(lines):
 
 
 # Choose the longest left and right line
-def filter_lines(lines):
+def find_left_right(lines):
     left_lane = [0, 0, 0, 0]
     left_lane_len = 0
     right_lane = [0, 0, 0, 0]
