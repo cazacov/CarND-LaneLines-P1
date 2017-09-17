@@ -165,7 +165,9 @@ def process_image(image):
                             maxLineGap=max_line_gap)
 
     # Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
-    filtered_lines = filter_lines(lines)
+    filtered_lines = filter_low_slope(lines)
+
+    filtered_lines = filter_lines(filtered_lines)
 
     lane = extend_lines_to_border(filtered_lines, xsize, ysize)
 
@@ -174,26 +176,41 @@ def process_image(image):
     return result
 
 
-# Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
+def filter_low_slope(lines):
+    result = []
+
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            slope = (y2 - y1) / (x2 - x1)
+            if math.fabs(slope) < math.tan(20.0 * math.pi / 180.0):
+                # Skip lines with slope below 20 degrees
+                continue
+            else:
+                result.append(line)
+
+    return np.array(result)
+
+
+# Choose the longest left and right line
 def filter_lines(lines):
     left_lane = [0, 0, 0, 0]
     left_lane_len = 0
     right_lane = [0, 0, 0, 0]
     right_lane_len = 0
-    for line_item in lines:
-        line = line_item[0]
-        slope = (line[3] - line[1]) / (line[2] - line[0])
-        if math.fabs(slope) < math.tan(0.3):
-            continue
-        line_len = (line[3] - line[1]) * (line[3] - line[1]) + (line[2] - line[0]) * (line[2] - line[0])
+
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            slope = (y2 - y1) / (x2 - x1)
+
+        line_len = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)
         if slope > 0:
             if line_len > right_lane_len:
                 right_lane_len = line_len
-                right_lane = line_item
+                right_lane = line
         else:
             if line_len > left_lane_len:
                 left_lane_len = line_len
-                left_lane = line_item
+                left_lane = line
 
     result = []
     if right_lane_len > 0:
@@ -214,7 +231,7 @@ def pipeline(image_name):
 
     output_name = 'test_images_output/' + os.path.basename(image_name)
     plt.imshow(result)
-    plt.savefig(output_name)
+    # plt.savefig(output_name)
     plt.show()
 
 
