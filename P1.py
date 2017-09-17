@@ -110,10 +110,25 @@ import os
 os.listdir("test_images/")
 
 
+def extend_lines_to_border(lines, xsize, ysize):
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            slope = (y2 - y1) / (x2 - x1)
+            b = y1 - slope * x1
+            xborder = (ysize - b) / slope
+            if y2 > y1:
+                line[0, 3] = ysize
+                line[0, 2] = xborder
+            else:
+                line[0, 1] = ysize
+                line[0, 0] = xborder
+
+    return lines
+
+
 def process_image(image):
     xsize = image.shape[1]
     ysize = image.shape[0]
-
 
     result = np.copy(image)
 
@@ -152,9 +167,12 @@ def process_image(image):
     # Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
     filtered_lines = filter_lines(lines)
 
-    draw_lines(result, filtered_lines)
+    lane = extend_lines_to_border(filtered_lines, xsize, ysize)
+
+    draw_lines(result, lane)
 
     return result
+
 
 # Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
 def filter_lines(lines):
@@ -176,15 +194,14 @@ def filter_lines(lines):
             if line_len > left_lane_len:
                 left_lane_len = line_len
                 left_lane = line_item
-    filtered_lines = np.empty((0, 1, 4))
-    if left_lane_len > 0:
-        # Left line found
-        np.append(filtered_lines, left_lane)
+
+    result = []
     if right_lane_len > 0:
-        # Right line found
-        np.append(filtered_lines, right_lane)
-    filtered_lines = np.array([left_lane, right_lane])
-    return filtered_lines
+        result.append(right_lane)
+    if left_lane_len > 0:
+        result.append(left_lane)
+
+    return np.array(result)
 
 
 def pipeline(image_name):
@@ -201,9 +218,9 @@ def pipeline(image_name):
     plt.show()
 
 
-#pipeline("test_images/solidWhiteCurve.jpg")
+# pipeline("test_images/solidWhiteCurve.jpg")
 pipeline("test_images/solidWhiteRight.jpg")
-#pipeline("test_images/solidYellowCurve.jpg")
-#pipeline("test_images/solidYellowCurve2.jpg")
-#pipeline("test_images/solidYellowLeft.jpg")
-#pipeline("test_images/whiteCarLaneSwitch.jpg")
+# pipeline("test_images/solidYellowCurve.jpg")
+# pipeline("test_images/solidYellowCurve2.jpg")
+# pipeline("test_images/solidYellowLeft.jpg")
+# pipeline("test_images/whiteCarLaneSwitch.jpg")
