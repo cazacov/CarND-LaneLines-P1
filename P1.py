@@ -75,6 +75,11 @@ def draw_lines(img, lines, color=[255, 0, 0], thickness=2):
             cv2.line(img, (x1, y1), (x2, y2), color, thickness)
 
 
+def draw_poly(img, lines, color=[255, 0, 0]):
+    pts = lines.reshape((-1, 1, 2))
+    cv2.fillConvexPoly(img, pts, color)
+
+
 def hough_lines(img, rho, theta, threshold, min_line_len, max_line_gap):
     """
     `img` should be the output of a Canny transform.
@@ -158,9 +163,9 @@ def process_image(image):
     # Find lines
     rho = 1  # distance resolution in pixels of the Hough grid
     theta = np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 75  # minimum number of votes (intersections in Hough grid cell)
+    threshold = 50  # minimum number of votes (intersections in Hough grid cell)
     min_line_length = 180  # minimum number of pixels making up a line
-    max_line_gap = 100
+    max_line_gap = 120
     lines = cv2.HoughLinesP(masked_image, rho, theta, threshold, np.array([]), minLineLength=min_line_length,
                             maxLineGap=max_line_gap)
 
@@ -171,11 +176,12 @@ def process_image(image):
 
     lane = extend_lines_to_border(filtered_lines, xsize, ysize)
 
+    nice_lane = cut_lines(lane, xsize, ysize)
+
     lane_image = np.zeros((ysize, xsize, 3), dtype=np.uint8)
-    draw_lines(lane_image, lane, thickness=5)
+    draw_poly(lane_image, nice_lane)
 
     result = weighted_img(original_image, lane_image)
-
     return result
 
 
@@ -224,6 +230,44 @@ def find_left_right(lines):
     return np.array(result)
 
 
+# Cuts line to the region of interest
+def cut_lines(lines, xsize, ysize):
+    if lines.shape[0] != 2:
+        # Can work only with exactly two lines
+        return
+
+    # find intersection point
+    lineA = np.polyfit((lines[0][0][0], lines[0][0][2]), (lines[0][0][1], lines[0][0][3]), 1)
+    lineB = np.polyfit((lines[1][0][0], lines[1][0][2]), (lines[1][0][1], lines[1][0][3]), 1)
+
+    x = (lineB[1] - lineA[1]) / (lineA[0] - lineB[0])
+    y = x * lineA[0] + lineA[1]
+
+    cut_y = y + (ysize - y) * 0.1  # Take bottom 90% below the intersection point
+
+    result = []
+
+    result.append(
+        [[
+            (ysize - lineA[1]) / lineA[0],
+            ysize,
+            (cut_y - lineA[1]) / lineA[0],
+            cut_y
+        ]]
+    )
+
+    result.append(
+        [[
+            (cut_y - lineB[1]) / lineB[0],
+            cut_y,
+            (ysize - lineB[1]) / lineB[0],
+            ysize,
+        ]]
+    )
+
+    return np.array(result).astype(int)
+
+
 def pipeline(image_name):
     image = mpimg.imread(image_name)
 
@@ -238,8 +282,8 @@ def pipeline(image_name):
     plt.show()
 
 
-# pipeline("test_images/solidWhiteCurve.jpg")
-pipeline("test_images/solidWhiteRight.jpg")
+pipeline("test_images/solidWhiteCurve.jpg")
+# pipeline("test_images/solidWhiteRight.jpg")
 # pipeline("test_images/solidYellowCurve.jpg")
 # pipeline("test_images/solidYellowCurve2.jpg")
 # pipeline("test_images/solidYellowLeft.jpg")
