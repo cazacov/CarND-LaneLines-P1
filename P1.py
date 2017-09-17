@@ -1,4 +1,4 @@
-#importing some useful packages
+# importing some useful packages
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
@@ -104,23 +104,87 @@ def weighted_img(img, initial_img, α=0.8, β=1., λ=0.):
     """
     return cv2.addWeighted(initial_img, α, img, β, λ)
 
+
 import os
+
 os.listdir("test_images/")
 
+
 def process_image(image):
-    xsize = image.shape[0]
-    ysize = image.shape[1]
+    xsize = image.shape[1]
+    ysize = image.shape[0]
+
 
     result = np.copy(image)
 
+    # Convert to grayscale
+    gray = grayscale(image)
 
+    # Smooth
+    blur = gaussian_blur(gray, kernel_size=5)
 
-    color_mask = np.copy(image)
-    threshold = 180
-    pixels_below_threshold = (image[:,:,0] < threshold) | (image[:,:,1] < threshold) | (image[:,:,2] < threshold)
-    color_mask[pixels_below_threshold] = [0,0,0]
+    # Detect edges
+    low_threshold = 50
+    high_threshold = 192
+    edges = canny(blur, low_threshold, high_threshold)
 
-    return color_mask
+    # Cut region of interest
+    mask_verticles = np.array([[
+        (0, ysize),
+        (xsize * 0.4, ysize * 0.3),
+        (xsize * 0.6, ysize * 0.3),
+        (xsize, ysize)
+    ]], dtype=np.int32)
+    masked_image = region_of_interest(edges, mask_verticles)
+
+    plt.imshow(masked_image)
+    plt.show()
+
+    # Find lines
+    rho = 1  # distance resolution in pixels of the Hough grid
+    theta = np.pi / 180  # angular resolution in radians of the Hough grid
+    threshold = 75  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 180  # minimum number of pixels making up a line
+    max_line_gap = 100
+    lines = cv2.HoughLinesP(masked_image, rho, theta, threshold, np.array([]), minLineLength=min_line_length,
+                            maxLineGap=max_line_gap)
+
+    # Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
+    filtered_lines = filter_lines(lines)
+
+    draw_lines(result, filtered_lines)
+
+    return result
+
+# Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
+def filter_lines(lines):
+    left_lane = [0, 0, 0, 0]
+    left_lane_len = 0
+    right_lane = [0, 0, 0, 0]
+    right_lane_len = 0
+    for line_item in lines:
+        line = line_item[0]
+        slope = (line[3] - line[1]) / (line[2] - line[0])
+        if math.fabs(slope) < math.tan(0.3):
+            continue
+        line_len = (line[3] - line[1]) * (line[3] - line[1]) + (line[2] - line[0]) * (line[2] - line[0])
+        if slope > 0:
+            if line_len > right_lane_len:
+                right_lane_len = line_len
+                right_lane = line_item
+        else:
+            if line_len > left_lane_len:
+                left_lane_len = line_len
+                left_lane = line_item
+    filtered_lines = np.empty((0, 1, 4))
+    if left_lane_len > 0:
+        # Left line found
+        np.append(filtered_lines, left_lane)
+    if right_lane_len > 0:
+        # Right line found
+        np.append(filtered_lines, right_lane)
+    filtered_lines = np.array([left_lane, right_lane])
+    return filtered_lines
 
 
 def pipeline(image_name):
@@ -137,7 +201,9 @@ def pipeline(image_name):
     plt.show()
 
 
-
-
-pipeline("test_images/solidWhiteCurve.jpg")
-#pipeline("test_images/solidWhiteRight.jpg")
+#pipeline("test_images/solidWhiteCurve.jpg")
+pipeline("test_images/solidWhiteRight.jpg")
+#pipeline("test_images/solidYellowCurve.jpg")
+#pipeline("test_images/solidYellowCurve2.jpg")
+#pipeline("test_images/solidYellowLeft.jpg")
+#pipeline("test_images/whiteCarLaneSwitch.jpg")
