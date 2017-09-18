@@ -115,84 +115,14 @@ import os
 os.listdir("test_images/")
 
 
-def extend_lines_to_border(lines, xsize, ysize):
-    for line in lines:
-        for x1, y1, x2, y2 in line:
-            slope = (y2 - y1) / (x2 - x1)
-            b = y1 - slope * x1
-            xborder = (ysize - b) / slope
-            if y2 > y1:
-                line[0, 3] = ysize
-                line[0, 2] = xborder
-            else:
-                line[0, 1] = ysize
-                line[0, 0] = xborder
-
-    return lines
-
-
-def process_image(image):
-    xsize = image.shape[1]
-    ysize = image.shape[0]
-
-    original_image = np.copy(image)
-
-    # Convert to grayscale
-    gray = grayscale(image)
-
-    # Smooth
-    blur = gaussian_blur(gray, kernel_size=5)
-
-    # Detect edges
-    low_threshold = 50
-    high_threshold = 192
-    edges = canny(blur, low_threshold, high_threshold)
-
-    # Cut region of interest
-    mask_verticles = np.array([[
-        (0, ysize),
-        (xsize * 0.4, ysize * 0.3),
-        (xsize * 0.6, ysize * 0.3),
-        (xsize, ysize)
-    ]], dtype=np.int32)
-    masked_image = region_of_interest(edges, mask_verticles)
-
-    plt.imshow(masked_image)
-    plt.show()
-
-    # Find lines
-    rho = 1  # distance resolution in pixels of the Hough grid
-    theta = np.pi / 180  # angular resolution in radians of the Hough grid
-    threshold = 50  # minimum number of votes (intersections in Hough grid cell)
-    min_line_length = 180  # minimum number of pixels making up a line
-    max_line_gap = 120
-    lines = cv2.HoughLinesP(masked_image, rho, theta, threshold, np.array([]), minLineLength=min_line_length,
-                            maxLineGap=max_line_gap)
-
-    # Choose the longest left and right lines ignoring those with low slope (tan < 0.3)
-    filtered_lines = filter_low_slope(lines)
-
-    filtered_lines = find_left_right(filtered_lines)
-
-    lane = extend_lines_to_border(filtered_lines, xsize, ysize)
-
-    nice_lane = cut_lines(lane, xsize, ysize)
-
-    lane_image = np.zeros((ysize, xsize, 3), dtype=np.uint8)
-    draw_poly(lane_image, nice_lane)
-
-    result = weighted_img(original_image, lane_image)
-    return result
-
-
 def filter_low_slope(lines):
     result = []
 
     for line in lines:
         for x1, y1, x2, y2 in line:
             slope = (y2 - y1) / (x2 - x1)
-            if math.fabs(slope) < math.tan(20.0 * math.pi / 180.0):
-                # Skip lines with slope below 20 degrees
+            if math.fabs(slope) < math.tan(30.0 * math.pi / 180.0):
+                # Skip lines with slope below 30 degrees
                 continue
             else:
                 result.append(line)
@@ -230,7 +160,28 @@ def find_left_right(lines):
     return np.array(result)
 
 
-# Cuts line to the region of interest
+def extend_lines_to_border(lines, xsize, ysize):
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            slope = (y2 - y1) / (x2 - x1)
+            b = y1 - slope * x1
+            xborder = (ysize - b) / slope
+            if y2 > y1:
+                line[0, 3] = ysize
+                line[0, 2] = xborder
+            else:
+                line[0, 1] = ysize
+                line[0, 0] = xborder
+
+    return lines
+
+
+def draw_poly(img, lines, color=[0, 255, 0]):
+    if lines is not None:
+        pts = lines.reshape((-1, 1, 2))
+        cv2.fillConvexPoly(img, pts, color)
+
+
 def cut_lines(lines, xsize, ysize):
     if lines.shape[0] != 2:
         # Can work only with exactly two lines
@@ -268,6 +219,81 @@ def cut_lines(lines, xsize, ysize):
     return np.array(result).astype(int)
 
 
+def find_lines(gray, xsize, ysize):
+    # Smooth
+    blur = gaussian_blur(gray, kernel_size=5)
+
+    # Detect edges
+    low_threshold = 50
+    high_threshold = 192
+    edges = canny(blur, low_threshold, high_threshold)
+
+    # Cut region of interest
+    mask_verticles = np.array([[
+        (0, ysize),
+        (xsize * 0.4, ysize * 0.5),
+        (xsize * 0.6, ysize * 0.5),
+        (xsize, ysize)
+    ]], dtype=np.int32)
+    masked_image = region_of_interest(edges, mask_verticles)
+
+    # Find lines
+    rho = 1  # distance resolution in pixels of the Hough grid
+    theta = np.pi / 180  # angular resolution in radians of the Hough grid
+    threshold = 75  # minimum number of votes (intersections in Hough grid cell)
+    min_line_length = 180  # minimum number of pixels making up a line
+    max_line_gap = 150
+    lines = cv2.HoughLinesP(masked_image, rho, theta, threshold, np.array([]), minLineLength=min_line_length,
+                            maxLineGap=max_line_gap)
+
+    # Skip those with low slope (tan < 0.3)
+    filtered_lines = filter_low_slope(lines)
+
+    # Choose the longest left and right lines
+    filtered_lines = find_left_right(filtered_lines)
+
+    return filtered_lines
+
+
+def process_image(image):
+    xsize = image.shape[1]
+    ysize = image.shape[0]
+
+    original_image = np.copy(image)
+
+    # Convert to grayscale
+    gray = grayscale(image)
+
+    r, g, b = cv2.split(image)
+
+    test_image = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
+    h, l, s = cv2.split(test_image)
+
+    lines_gray = find_lines(gray, xsize, ysize)
+    lines_b = find_lines(b, xsize, ysize)
+    lines_s = find_lines(s, xsize, ysize)
+
+    # Find the best color space
+    # Try to use gray channel first. If no lines found, fallback to G channel of RGB, then fallbach to S channel of HLS
+    if lines_gray.shape[0] >= 2:
+        lines = lines_gray
+    elif lines_b.shape[0] >= 2:
+        lines = lines_b
+    else:
+        lines = lines_s
+
+    lane_image = np.zeros((ysize, xsize, 3), dtype=np.uint8)
+
+    lane = extend_lines_to_border(lines, xsize, ysize)
+    nice_lane = cut_lines(lane, xsize, ysize)
+    draw_lines(lane_image, lane, thickness=5)
+    #draw_poly(lane_image, nice_lane)
+
+    result = weighted_img(original_image, lane_image, 0.4, 1)
+
+    return result
+
+
 def pipeline(image_name):
     image = mpimg.imread(image_name)
 
@@ -278,11 +304,12 @@ def pipeline(image_name):
 
     output_name = 'test_images_output/' + os.path.basename(image_name)
     plt.imshow(result)
-    # plt.savefig(output_name)
+    #plt.savefig(output_name)
     plt.show()
 
 
-pipeline("test_images/solidWhiteCurve.jpg")
+pipeline("frame5.jpg")
+# pipeline("test_images/solidWhiteCurve.jpg")
 # pipeline("test_images/solidWhiteRight.jpg")
 # pipeline("test_images/solidYellowCurve.jpg")
 # pipeline("test_images/solidYellowCurve2.jpg")
